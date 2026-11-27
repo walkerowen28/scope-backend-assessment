@@ -92,7 +92,11 @@ function acceptedName(
   cleanedName: string | null | undefined,
   known: string[],
 ): string {
-  const cleaned = cleanedName?.trim() || input;
+  const trimmedName = cleanedName?.trim();
+  let cleaned = input;
+  if (trimmedName) {
+    cleaned = trimmedName;
+  }
   const chosen = existingName && known.includes(existingName) ? existingName : cleaned;
   return matchKnownName(chosen, known) ?? matchKnownName(input, known) ?? chosen;
 }

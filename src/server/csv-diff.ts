@@ -86,7 +86,7 @@ function showtimeKey(title: string, startTime: string): string {
 export function rowsFromCsv(csv: string, theaterName: string): CsvRow[] {
   const table = parseCsv(csv);
   const header = table[0]?.map((column) => column.trim());
-  if (!header || header.join(",") !== columns.join(",")) {
+  if (header?.join(",") !== columns.join(",")) {
     throw new ApiError(422, `CSV header must be ${columns.join(",")}.`);
   }
 
@@ -101,9 +101,11 @@ export function rowsFromCsv(csv: string, theaterName: string): CsvRow[] {
       columns.map((column, index) => [column, (cells[index] ?? "").trim()]),
     );
     if (record.theater_name !== theaterName) {
+      const foundTheater =
+        record.theater_name.length > 0 ? record.theater_name : "a blank theater";
       throw new ApiError(
         422,
-        `Every row must be for ${theaterName}. Found ${record.theater_name || "a blank theater"}.`,
+        `Every row must be for ${theaterName}. Found ${foundTheater}.`,
       );
     }
     for (const column of columns) {
