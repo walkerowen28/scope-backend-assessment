@@ -1,4 +1,4 @@
-import type { TransactionSql } from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 import type {
   MovieStatus,
   PreviewChanges,
@@ -70,8 +70,8 @@ export async function listShowtimes(theaterIds: string[]): Promise<Showtime[]> {
   return rows.map(toShowtime);
 }
 
-async function ensureAuditorium(
-  tx: TransactionSql,
+export async function ensureAuditorium(
+  tx: Sql | TransactionSql,
   theaterId: string,
   name: string,
 ): Promise<string> {

@@ -1,9 +1,12 @@
 import { z } from "zod";
 import { ApiError, apiResponse } from "~/server/errors";
 import { assertAdminOfTheater } from "~/server/access";
-import { buildPreview } from "~/server/csv-diff";
+import { buildPreviewFromRows, rowsFromCsv } from "~/server/csv-diff";
 import { sql } from "~/server/db";
+import { resolveImportedRows } from "~/server/sanitize";
 import { listShowtimes } from "~/server/showtimes";
+
+export const maxDuration = 60;
 
 const bodySchema = z.object({
   userId: z.string().min(1),
@@ -28,7 +31,9 @@ export async function POST(
     const current = await listShowtimes(
       access.theaterIds.filter((id) => id === theaterId),
     );
-    return Response.json(buildPreview(theater.name, current, body.csv));
+    const rows = rowsFromCsv(body.csv, theater.name);
+    const resolved = await resolveImportedRows(theaterId, rows);
+    return Response.json(buildPreviewFromRows(current, resolved));
   } catch (error) {
     if (error instanceof z.ZodError) {
       return Response.json({ error: "userId and csv are required." }, { status: 400 });

@@ -18,7 +18,7 @@ const columns = [
   "last_updated",
 ] as const;
 
-type CsvRow = ShowtimeAdd & { theaterName: string };
+export type CsvRow = ShowtimeAdd & { theaterName: string };
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -83,7 +83,7 @@ function showtimeKey(title: string, startTime: string): string {
   return `${title.trim()}\n${isoTime(startTime, "start_time")}`;
 }
 
-function rowsFromCsv(csv: string, theaterName: string): CsvRow[] {
+export function rowsFromCsv(csv: string, theaterName: string): CsvRow[] {
   const table = parseCsv(csv);
   const header = table[0]?.map((column) => column.trim());
   if (!header || header.join(",") !== columns.join(",")) {
@@ -139,7 +139,18 @@ export function buildPreview(
   current: Showtime[],
   csv: string,
 ): PreviewChanges {
-  const incoming = rowsFromCsv(csv, theaterName);
+  return buildPreviewFromRows(current, rowsFromCsv(csv, theaterName));
+}
+
+export function buildPreviewFromRows(
+  current: Showtime[],
+  incomingRows: CsvRow[],
+): PreviewChanges {
+  const incomingByKey = new Map<string, CsvRow>();
+  for (const row of incomingRows) {
+    incomingByKey.set(showtimeKey(row.movieTitle, row.startTime), row);
+  }
+  const incoming = [...incomingByKey.values()];
   const currentByKey = new Map(
     current.map((showtime) => [
       showtimeKey(showtime.movieTitle, showtime.startTime),
