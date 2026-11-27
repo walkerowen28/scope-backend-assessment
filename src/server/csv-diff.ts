@@ -101,8 +101,8 @@ export function rowsFromCsv(csv: string, theaterName: string): CsvRow[] {
       columns.map((column, index) => [column, (cells[index] ?? "").trim()]),
     );
     if (record.theater_name !== theaterName) {
-      const foundTheater =
-        record.theater_name.length > 0 ? record.theater_name : "a blank theater";
+      const foundName = record.theater_name ?? "";
+      const foundTheater = foundName.length > 0 ? foundName : "a blank theater";
       throw new ApiError(
         422,
         `Every row must be for ${theaterName}. Found ${foundTheater}.`,

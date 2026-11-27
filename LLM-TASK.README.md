@@ -2,8 +2,6 @@
 
 This document outlines how I enhanced the CSV upload feature. I implemented an LLM agent to check uploaded showings for title/auditorium typos, to prevent accidental changes to these fields in showing records.
 
-The app is the Next.js project. Postgres is my own Supabase database. `GEMINI_API_KEY` is read only on the server. Select Downtown Cinema 7 as an admin before uploading. A partial file archives any current showing that is missing, so each test file below includes the full Downtown schedule from `sample-data/existing.csv`.
-
 ## 1. Stages
 
 I used an AI coding assistant, Cursor, to accelerate development. I broke the feature request into pieces: design/plan, implementation, review, testing. This made the project more granular and digestable.
@@ -16,7 +14,7 @@ I used an AI coding assistant, Cursor, to accelerate development. I broke the fe
 
 **Stage 2 — REST, wired to the existing page.** 
 
-- Design: The page did not call an API, it originally used hardcoded data in typescript. Showtimes, status edits, clear schedule, CSV preview, and confirm became Next.js route handlers under `src/app/api`. The Python `backend/` app stays the unused health-check scaffold so one Vercel project can serve the UI and the API.
+- Design: The page originally used hardcoded data in typescript. Created REST endooints for displaying Showtimes, editing status, clearing schedule, CSV preview, and confirm became Next.js route handlers under `src/app/api`. The Python `backend/` app stays the unused health-check scaffold so one Vercel project can serve the UI and the API.
 - Implementation: Cursor
 - Review/Pushback: I pushed back on `GET /api/users` and `GET /api/theaters`. The screen never creates either, so those dropdowns stay on the hardcoded lists. I also rejected an `import_previews` table. The preview route only returns the diff. Confirm posts that same diff back, and that request is what writes.
 
@@ -24,7 +22,7 @@ I used an AI coding assistant, Cursor, to accelerate development. I broke the fe
 
 - Design: Exact and normalized names are resolved locally. Only unknown movie titles and auditorium names go to Gemini, with the names already stored for that theater. A match with no real field change is left out of the preview. A new room is inserted into `auditoriums`. A new showing is an add and is written on confirm.
 - Implementation: Cursor
-- Review/Pushback: I pushed back when known names were taken from the showtimes loaded for the page. Typo matching now reads `showtimes.movie_title` and `auditoriums.name` from the database. I also rejected treating `Auditorium 1 (Laser)` as a new room or as an auditorium change. A parenthetical note matches the shorter stored room, and that longer name is not inserted.
+- Review/Pushback: I pushed back when title/auditorium existing lists were grabbed from frontend, rather than backend DB. Typo matching now reads `showtimes.movie_title` and `auditoriums.name` from the database. I hardened the title/auditorium matching after seeing `Auditorium 1 (Laser)` treated as a new room or as an auditorium change, when it shouldn't have. A parenthetical note matches the shorter stored room, and that longer name is not inserted.
 
 ## 2. Testing
 
@@ -43,6 +41,7 @@ A missed typo shows up as an add plus an archive of the stored showing. That is 
 
 - Decide whether showing uploads can create new, unseen-before, auditoriums/movies. Currently I allow new auditoriums/movies because the new-drop.csv adds movies, but restricting users to the pre-defined movies / auditoriums list would help prevent adding major typos.
 - Investigate 10-20 sec latency on Import CSV feature, likely due to LLM API free tier.
+- I wanted backend to be deployed seperately, which can be a better design for scaling later on. Cursor suggested the API/UI as one deployable unit in Vercel
 - Move search, filters, and sort to the showtimes query, with paging, so the table is not limited to what the browser holds.
 - Show typo-corrected showings to give user feedback on why their different title/auditorium was matched to existing value. Model to provide one-sentence reason on each preview row.
 - Insert a new auditorium only when confirm is accepted, so cancel does not leave an unused room.
