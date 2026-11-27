@@ -15,15 +15,26 @@ const emptyPreview: PreviewChanges = {
   archives: [],
 };
 
+async function errorMessage(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string };
+    return body.error ?? response.statusText;
+  } catch {
+    return response.statusText;
+  }
+}
+
 const uniqueSorted = (values: string[]) =>
   [...new Set(values.filter(Boolean))].sort();
 
 export default function Home() {
   const { user, userId, setUserId, signOut } = useMockSession();
-  const [showtimes, setShowtimes] = useState<Showtime[]>(assessmentData.showtimes);
+  const [showtimes, setShowtimes] = useState<Showtime[]>([]);
   const [selectedTheaterId, setSelectedTheaterId] = useState<string>("all");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewChanges>(emptyPreview);
+  const [isApplying, setIsApplying] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
 
   const [filters, setFilters] = useState({
     status: "all" as "active" | "inactive" | "archived" | "all",
@@ -38,6 +49,7 @@ export default function Home() {
 
   const isAdmin = user?.role === "admin";
 
+  // Theaters stay in memory. The UI never creates them, so there is no theaters endpoint.
   const theatersById = useMemo(() => {
     return assessmentData.theaters.reduce(
       (acc, theater) => {
@@ -141,50 +153,139 @@ export default function Home() {
     };
   }, [scopedShowtimes]);
 
-  const previewForTheater = useMemo(() => {
-    if (selectedTheaterId === "all") return emptyPreview;
-    return (
-      assessmentData.previewChangesByTheater[selectedTheaterId] ?? emptyPreview
-    );
-  }, [selectedTheaterId]);
+  useEffect(() => {
+    if (!userId) {
+      setShowtimes([]);
+      return;
+    }
 
-  const handleFileSelect = (_content: string) => {
-    setPreviewData(previewForTheater);
-    setIsPreviewOpen(true);
+    const params = new URLSearchParams({ userId });
+    if (selectedTheaterId !== "all") {
+      params.set("theaterId", selectedTheaterId);
+    }
+
+    let cancelled = false;
+    void fetch(`/api/showtimes?${params.toString()}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await errorMessage(response));
+        return response.json() as Promise<Showtime[]>;
+      })
+      .then((rows) => {
+        if (!cancelled) setShowtimes(rows);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          alert(error instanceof Error ? error.message : "Failed to load showtimes.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTheaterId, userId]);
+
+  const handleFileSelect = async (content: string) => {
+    if (!userId || selectedTheaterId === "all") return;
+    setIsPreviewing(true);
+    try {
+      const response = await fetch(`/api/theaters/${selectedTheaterId}/imports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, csv: content }),
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      setPreviewData((await response.json()) as PreviewChanges);
+      setIsPreviewOpen(true);
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : "Failed to read the CSV.");
+    } finally {
+      setIsPreviewing(false);
+    }
   };
 
-  const handleConfirmChanges = () => {
-    setIsPreviewOpen(false);
+  const handleConfirmChanges = async () => {
+    if (!userId || selectedTheaterId === "all") return;
+    setIsApplying(true);
+    try {
+      const response = await fetch(
+        `/api/theaters/${selectedTheaterId}/imports/confirm`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, changes: previewData }),
+        },
+      );
+      if (!response.ok) throw new Error(await errorMessage(response));
+      setShowtimes((await response.json()) as Showtime[]);
+      setIsPreviewOpen(false);
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : "Failed to apply the schedule.");
+    } finally {
+      setIsApplying(false);
+    }
   };
 
-  const handleClearSchedule = () => {
-    if (selectedTheaterId === "all") {
+  const handleClearSchedule = async () => {
+    if (!userId || selectedTheaterId === "all") {
       alert("Select a single theater before clearing the schedule.");
       return;
     }
     if (
-      confirm(
-        "Are you sure you want to archive all showtimes for this theater?",
-      )
+      !confirm("Are you sure you want to archive all showtimes for this theater?")
     ) {
-      setShowtimes((current) =>
-        current.map((showtime) =>
-          showtime.theaterId === selectedTheaterId
-            ? { ...showtime, status: "archived" }
-            : showtime,
-        ),
-      );
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/theaters/${selectedTheaterId}/archive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      setShowtimes((await response.json()) as Showtime[]);
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : "Failed to clear the schedule.");
     }
   };
 
-  const handleMovieStatusChange = (showtimeId: string, status: MovieStatus) => {
-    setShowtimes((current) =>
-      current.map((showtime) =>
-        showtime.id === showtimeId
-          ? { ...showtime, movieStatus: status }
-          : showtime,
-      ),
-    );
+  const handleMovieStatusChange = async (showtimeId: string, status: MovieStatus) => {
+    if (!userId) return;
+    try {
+      const response = await fetch(`/api/showtimes/${showtimeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, movieStatus: status }),
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const updated = (await response.json()) as Showtime;
+      setShowtimes((current) =>
+        current.map((showtime) => (showtime.id === updated.id ? updated : showtime)),
+      );
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : "Failed to update movie status.");
+    }
+  };
+
+  const handleStatusChange = async (
+    showtimeId: string,
+    status: Showtime["status"],
+  ) => {
+    if (!userId) return;
+    try {
+      const response = await fetch(`/api/showtimes/${showtimeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, status }),
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const updated = (await response.json()) as Showtime;
+      setShowtimes((current) =>
+        current.map((showtime) => (showtime.id === updated.id ? updated : showtime)),
+      );
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : "Failed to update showtime status.");
+    }
   };
 
   const activeCount = filteredShowtimes.filter(
@@ -217,6 +318,7 @@ export default function Home() {
                 <option value="" disabled>
                   Select a user
                 </option>
+                {/* Users stay in memory. The UI never creates them, so there is no users endpoint. */}
                 {assessmentData.users.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
                     {candidate.name} ({candidate.role})
@@ -281,7 +383,9 @@ export default function Home() {
             disabled={
               !isAdmin ||
               selectedTheaterId === "all" ||
-              accessibleTheaters.length === 0
+              accessibleTheaters.length === 0 ||
+              isPreviewing ||
+              isApplying
             }
           />
 
@@ -348,19 +452,7 @@ export default function Home() {
                 onMovieStatusChange={
                   isAdmin ? handleMovieStatusChange : undefined
                 }
-                onStatusChange={
-                  isAdmin
-                    ? (showtimeId, status) => {
-                        setShowtimes((current) =>
-                          current.map((showtime) =>
-                            showtime.id === showtimeId
-                              ? { ...showtime, status }
-                              : showtime,
-                          ),
-                        );
-                      }
-                    : undefined
-                }
+                onStatusChange={isAdmin ? handleStatusChange : undefined}
               />
             </div>
           </>
@@ -371,7 +463,7 @@ export default function Home() {
           onClose={() => setIsPreviewOpen(false)}
           onConfirm={handleConfirmChanges}
           changes={previewData}
-          isApplying={false}
+          isApplying={isApplying}
         />
       </div>
     </main>

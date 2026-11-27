@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
-import { assessmentData } from "../src/data/assessment-data.ts";
+import { assessmentData } from "../src/data/assessment-data";
+import { auditoriumId, canonicalTitle } from "../src/server/identity";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -16,23 +17,6 @@ if (databaseUrl.includes("zdpzoremwtdcrwpajtmo")) {
 }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function canonicalTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function auditoriumId(theaterId: string, name: string): string {
-  const theater = theaterId.replace(/^theater-/, "");
-  const normalized = name.trim().toLowerCase();
-  const room = normalized.startsWith("auditorium")
-    ? normalized.replace(/^auditorium\s+/, "")
-    : normalized;
-  return `aud-${theater}-${room.replace(/\s+/g, "-")}`;
-}
 
 const sql = postgres(databaseUrl, { max: 1, ssl: "require" });
 

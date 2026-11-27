@@ -32,6 +32,7 @@ export function useMockSession(initialUserId: string | null = defaultUserId) {
     }
   }, [userId]);
 
+  // Users stay in memory. The UI never creates them, so there is no users endpoint.
   const user: AssessmentUser | null = useMemo(() => {
     if (!userId) return null;
     return assessmentData.users.find((candidate) => candidate.id === userId) ?? null;
